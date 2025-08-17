@@ -1,43 +1,31 @@
-#!/bin/bash
+#!/bin/zsh
 
-# Loop through all movie folders
+# Batch script to process all movies for Samsung TV compatibility
+# - Picks the main MKV file ending with ETRG.mkv
+# - Embeds English subtitles (ends with English.srt)
+# - Copies video
+# - Keeps original audio + adds AC3 track
+# - Outputs new file with _tv.mkv suffix
+
 for dir in */; do
-    # Skip if not a movie folder
-    [[ "$dir" == "Screenshots/" ]] && continue
-    [[ "$dir" == "External AC3/" ]] && continue
+    movie_file=$(find "$dir" -type f -name "*ETRG.mkv" ! -iname "*sample*" | head -n 1)
+    sub_file=$(find "$dir" -type f -path "*/Subtitles/*English.srt" | head -n 1)
 
-    echo "📂 Entering $dir"
+    if [[ -n "$movie_file" && -n "$sub_file" ]]; then
+        output_file="${movie_file%.mkv}_tv.mkv"
+        echo "Processing: $movie_file with subs: $sub_file"
 
-    # Find the real MKV (ends with ETRG.mkv, exclude sample)
-    mkvfile=$(find "$dir" -maxdepth 1 -type f -name "*ETRG.mkv" ! -name "*Sample*")
-    [ -z "$mkvfile" ] && echo "❌ No main MKV found in $dir, skipping..." && continue
-
-    # Extract basename
-    basename=$(basename "$mkvfile" .mkv)
-
-    # Look for English subtitle in the Subtitles subfolder
-    subfile=$(find "${dir}Subtitles" -type f -iname "*English.srt" | head -n 1)
-
-    if [ -n "$subfile" ]; then
-        echo "🎬 Processing $mkvfile with subs $subfile ..."
-        ffmpeg -i "$mkvfile" -i "$subfile" \
-        -map 0:v -map 0:a -map 1:s \
-        -c:v copy \
-        -c:a:0 copy \
-        -c:a:1 ac3 -b:a:1 384k \
-        -c:s srt \
-        -disposition:a:1 default \
-        -disposition:s:0 default+forced \
-        -metadata:s:s:0 language=eng \
-        "${dir}${basename}_tv_ready.mkv"
+        ffmpeg -i "$movie_file" -i "$sub_file" \
+            -map 0:v -map 0:a:0 -map 0:a:0 -map "1:s?" \
+            -c:v copy \
+            -c:a:0 copy \
+            -c:a:1 ac3 -b:a:1 448k -ar 48000 -ac 6 \
+            -c:s srt \
+            -disposition:a:1 default -disposition:a:0 0 \
+            -disposition:s:0 default \
+            -metadata:s:s:0 language=eng \
+            "$output_file"
     else
-        echo "⚠ No English subtitle found in $dir, adding audio only..."
-        ffmpeg -i "$mkvfile" \
-        -map 0:v -map 0:a \
-        -c:v copy \
-        -c:a:0 copy \
-        -c:a:1 ac3 -b:a:1 384k \
-        -disposition:a:1 default \
-        "${dir}${basename}_tv_ready.mkv"
+        echo "Skipping $dir (no matching MKV or English subtitles)"
     fi
 done
